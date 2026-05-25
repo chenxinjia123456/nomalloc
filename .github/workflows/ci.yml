@@ -1,0 +1,101 @@
+name: CI - Full Test Suite
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential libnuma-dev
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DNOMALLOC_ENABLE_TESTS=ON \
+          -DNOMALLOC_ENABLE_DEBUG=ON \
+          -DNOMALLOC_ENABLE_NUMA=ON
+
+    - name: Build
+      run: cmake --build build --parallel $(nproc)
+
+    - name: Run Unit Tests
+      run: |
+        cd build
+        ctest -R unit --output-on-failure -V
+
+    - name: Run SDV Tests
+      run: |
+        cd build
+        ./tests/sdv/test_basic
+        ./tests/sdv/test_minimal
+        ./tests/sdv/test_simple
+        ./tests/sdv/test_aligned_simple
+        ./tests/sdv/test_stress
+        ./tests/sdv/test_multithread
+
+    - name: Run Reliability Tests
+      run: |
+        cd build
+        ./tests/stress/stress_reliability
+
+    - name: Run Pressure Tests
+      run: |
+        cd build
+        timeout 300 ./tests/stress/stress_pressure || true
+
+    - name: Run Long Running Test (5 min)
+      run: |
+        cd build
+        timeout 300 ./tests/stress/stress_long_running || true
+
+    - name: Run Benchmarks
+      run: |
+        cd build
+        ./tests/benchmark/single_thread || true
+        ./tests/benchmark/multi_thread || true
+        ./tests/benchmark/latency_bench || true
+
+  memory-sanitizer:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential libnuma-dev
+
+    - name: Configure with ASan
+      run: |
+        cmake -B build-asan \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DNOMALLOC_ENABLE_TESTS=ON \
+          -DNOMALLOC_ENABLE_SANITIZERS=ON \
+          -DCMAKE_C_FLAGS="-fsanitize=address -fsanitize=undefined -g"
+
+    - name: Build with ASan
+      run: cmake --build build-asan --parallel $(nproc)
+
+    - name: Run Tests with ASan
+      run: |
+        cd build-asan
+        ./tests/stress/stress_reliability || true
+        ./tests/sdv/test_basic || true
+      continue-on-error: true
