@@ -26,3 +26,21 @@ target_include_directories(stress_pressure PRIVATE
 set_target_properties(stress_pressure PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests/stress
 )
+
+add_executable(stress_concurrent concurrent_stress_test.c)
+target_link_libraries(stress_concurrent PRIVATE nomalloc pthread)
+target_include_directories(stress_concurrent PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+set_target_properties(stress_concurrent PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests/stress
+)
+
+add_executable(stress_consistency memory_consistency_test.c)
+target_link_libraries(stress_consistency PRIVATE nomalloc pthread)
+target_include_directories(stress_consistency PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+set_target_properties(stress_consistency PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests/stress
+)
