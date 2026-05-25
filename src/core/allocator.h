@@ -52,6 +52,7 @@ void allocator_free(void* ptr);
 void* allocator_calloc(size_t nmemb, size_t size);
 void* allocator_realloc(void* ptr, size_t size);
 void* allocator_aligned_alloc(size_t alignment, size_t size);
+size_t allocator_malloc_usable_size(void* ptr);
 
 int allocator_configure(const struct nomalloc_allocator_config* config);
 void allocator_print_stats(void);

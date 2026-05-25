@@ -14,9 +14,24 @@
 #include <stdio.h>
 #include <errno.h>
 #include <malloc.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 struct allocator g_allocator;
 static bool g_allocator_initializing = false;
+
+#define ALLOC_HEADER_SIZE (sizeof(struct alloc_header))
+#define ALLOC_HEADER_ALIGNMENT 16
+
+struct alloc_header {
+    void* raw_ptr;
+    size_t size;
+    size_t requested_size;
+    uint32_t magic;
+    uint32_t flags;
+};
+
+#define ALLOC_MAGIC 0x4E4F4D41
 
 static void* system_malloc(size_t size) {
     extern void* __libc_malloc(size_t);
@@ -34,11 +49,77 @@ static void* system_realloc(void* ptr, size_t size) {
 }
 
 static void* system_aligned_alloc(size_t alignment, size_t size) {
-    void* ptr = NULL;
-    if (posix_memalign(&ptr, alignment, size) != 0) {
+    size_t page_size = sysconf(_SC_PAGESIZE);
+    size_t aligned_alignment = alignment > page_size ? alignment : page_size;
+    size_t total_size = size + aligned_alignment;
+    
+    void* ptr = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED) {
         return NULL;
     }
-    return ptr;
+    
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t aligned_addr = align_up(addr, alignment);
+    
+    if (aligned_addr != addr) {
+        size_t head_pad = aligned_addr - addr;
+        munmap(ptr, head_pad);
+    }
+    
+    size_t tail_pad = total_size - (aligned_addr - addr) - size;
+    if (tail_pad > 0) {
+        munmap((void*)(aligned_addr + size), tail_pad);
+    }
+    
+    return (void*)aligned_addr;
+}
+
+static void system_aligned_free(void* ptr, size_t size) {
+    if (!ptr) return;
+    munmap(ptr, size);
+}
+
+static inline void* add_header(void* raw_ptr, size_t size, size_t requested_size) {
+    if (!raw_ptr) return NULL;
+    
+    struct alloc_header* header = (struct alloc_header*)raw_ptr;
+    header->raw_ptr = raw_ptr;
+    header->size = size;
+    header->requested_size = requested_size;
+    header->magic = ALLOC_MAGIC;
+    header->flags = 0;
+    
+    void* user_ptr = (void*)((uintptr_t)raw_ptr + ALLOC_HEADER_SIZE);
+    return user_ptr;
+}
+
+static inline struct alloc_header* get_header(void* user_ptr) {
+    if (!user_ptr) return NULL;
+    
+    uintptr_t user_addr = (uintptr_t)user_ptr;
+    
+    if (user_addr < ALLOC_HEADER_SIZE) {
+        return NULL;
+    }
+    
+    uintptr_t header_addr = user_addr - ALLOC_HEADER_SIZE;
+    
+    struct alloc_header* header = (struct alloc_header*)header_addr;
+    
+    if (header->magic != ALLOC_MAGIC) {
+        return NULL;
+    }
+    
+    return header;
+}
+
+static inline void* remove_header(void* user_ptr) {
+    struct alloc_header* header = get_header(user_ptr);
+    if (!header) return user_ptr;
+    
+    uintptr_t header_addr = (uintptr_t)header;
+    return (void*)header_addr;
 }
 
 int allocator_init(void) {
@@ -177,8 +258,20 @@ void* allocator_malloc(size_t size) {
         size = 1;
     }
     
+    size_t aligned_size = align_up(size, ALLOC_HEADER_ALIGNMENT);
+    size_t total_size = aligned_size + ALLOC_HEADER_SIZE + ALLOC_HEADER_ALIGNMENT;
+    
     extern void* __libc_malloc(size_t);
-    return __libc_malloc(size);
+    void* raw_ptr = __libc_malloc(total_size);
+    if (!raw_ptr) {
+        return NULL;
+    }
+    
+    void* user_ptr = add_header(raw_ptr, total_size, size);
+    
+    atomic64_add_fetch(&g_allocator.total_allocated, size);
+    
+    return user_ptr;
 }
 
 void allocator_free(void* ptr) {
@@ -191,26 +284,22 @@ void allocator_free(void* ptr) {
         return;
     }
     
-    void** stored_ptr = (void**)((uintptr_t)ptr - sizeof(void*));
-    if ((uintptr_t)stored_ptr > 0x10000 && 
-        (uintptr_t)*stored_ptr > 0x10000 && 
-        (uintptr_t)*stored_ptr <= (uintptr_t)ptr &&
-        (uintptr_t)ptr - (uintptr_t)*stored_ptr < 4096) {
-        __libc_free(*stored_ptr);
+    struct alloc_header* header = get_header(ptr);
+    if (header) {
+        size_t size = header->requested_size;
+        atomic64_add_fetch(&g_allocator.total_freed, size);
+        
+        __libc_free(header->raw_ptr);
         return;
     }
     
-    struct chunk* chunk = ptr_to_chunk(ptr);
-    
     __libc_free(ptr);
-    return;
 }
 
 void* allocator_calloc(size_t nmemb, size_t size) {
-    extern void* __libc_calloc(size_t, size_t);
-    
     if (!g_allocator.initialized) {
         if (g_allocator_initializing) {
+            extern void* __libc_calloc(size_t, size_t);
             return __libc_calloc(nmemb, size);
         }
         if (allocator_init() != 0) {
@@ -218,11 +307,23 @@ void* allocator_calloc(size_t nmemb, size_t size) {
         }
     }
     
-    return __libc_calloc(nmemb, size);
+    size_t total_elements = nmemb * size;
+    if (total_elements == 0) {
+        total_elements = 1;
+    }
+    
+    void* ptr = allocator_malloc(total_elements);
+    if (ptr) {
+        memset(ptr, 0, total_elements);
+    }
+    
+    return ptr;
 }
 
 void* allocator_realloc(void* ptr, size_t size) {
     extern void* __libc_realloc(void*, size_t);
+    extern void* __libc_malloc(size_t);
+    extern void __libc_free(void*);
     
     if (!g_allocator.initialized) {
         if (g_allocator_initializing) {
@@ -233,15 +334,75 @@ void* allocator_realloc(void* ptr, size_t size) {
         }
     }
     
-    return __libc_realloc(ptr, size);
+    if (!ptr) {
+        return allocator_malloc(size);
+    }
+    
+    if (size == 0) {
+        allocator_free(ptr);
+        return NULL;
+    }
+    
+    struct alloc_header* header = get_header(ptr);
+    if (!header) {
+        return __libc_realloc(ptr, size);
+    }
+    
+    size_t old_requested_size = header->requested_size;
+    
+    if (size <= old_requested_size) {
+        header->requested_size = size;
+        return ptr;
+    }
+    
+    size_t aligned_size = align_up(size, ALLOC_HEADER_ALIGNMENT);
+    size_t new_total_size = aligned_size + ALLOC_HEADER_SIZE + ALLOC_HEADER_ALIGNMENT;
+    
+    void* new_raw_ptr = __libc_malloc(new_total_size);
+    if (!new_raw_ptr) {
+        return NULL;
+    }
+    
+    memcpy((void*)((uintptr_t)new_raw_ptr + ALLOC_HEADER_SIZE), ptr, old_requested_size);
+    
+    struct alloc_header* new_header = (struct alloc_header*)new_raw_ptr;
+    new_header->raw_ptr = new_raw_ptr;
+    new_header->size = new_total_size;
+    new_header->requested_size = size;
+    new_header->magic = ALLOC_MAGIC;
+    new_header->flags = 0;
+    
+    void* user_ptr = (void*)((uintptr_t)new_raw_ptr + ALLOC_HEADER_SIZE);
+    
+    atomic64_add_fetch(&g_allocator.total_freed, old_requested_size);
+    atomic64_add_fetch(&g_allocator.total_allocated, size);
+    
+    __libc_free(header->raw_ptr);
+    
+    return user_ptr;
 }
 
 void* allocator_aligned_alloc(size_t alignment, size_t size) {
     if (!g_allocator.initialized) {
         if (g_allocator_initializing) {
-            void* ptr = NULL;
-            posix_memalign(&ptr, alignment, size);
-            return ptr;
+            extern void* __libc_malloc(size_t);
+            
+            size_t alloc_size = size + alignment + ALLOC_HEADER_SIZE;
+            void* raw_ptr = __libc_malloc(alloc_size);
+            if (!raw_ptr) return NULL;
+            
+            uintptr_t raw_addr = (uintptr_t)raw_ptr;
+            uintptr_t user_addr_target = align_up(raw_addr + ALLOC_HEADER_SIZE, alignment);
+            uintptr_t header_addr = user_addr_target - ALLOC_HEADER_SIZE;
+            
+            struct alloc_header* header = (struct alloc_header*)header_addr;
+            header->raw_ptr = raw_ptr;
+            header->size = alloc_size;
+            header->requested_size = size;
+            header->magic = ALLOC_MAGIC;
+            header->flags = alignment;
+            
+            return (void*)user_addr_target;
         }
         if (allocator_init() != 0) {
             return NULL;
@@ -256,23 +417,35 @@ void* allocator_aligned_alloc(size_t alignment, size_t size) {
         size = 1;
     }
     
-    size_t aligned_size = align_up(size, alignment);
-    
     extern void* __libc_malloc(size_t);
-    if (alignment <= 16) {
-        return __libc_malloc(aligned_size);
-    }
     
-    size_t alloc_size = aligned_size + alignment;
+    size_t alloc_size = size + alignment + ALLOC_HEADER_SIZE;
     void* raw_ptr = __libc_malloc(alloc_size);
-    if (!raw_ptr) {
-        return NULL;
+    if (!raw_ptr) return NULL;
+    
+    uintptr_t raw_addr = (uintptr_t)raw_ptr;
+    uintptr_t user_addr_target = align_up(raw_addr + ALLOC_HEADER_SIZE, alignment);
+    uintptr_t header_addr = user_addr_target - ALLOC_HEADER_SIZE;
+    
+    struct alloc_header* header = (struct alloc_header*)header_addr;
+    header->raw_ptr = raw_ptr;
+    header->size = alloc_size;
+    header->requested_size = size;
+    header->magic = ALLOC_MAGIC;
+    header->flags = alignment;
+    
+    return (void*)user_addr_target;
+}
+
+size_t allocator_malloc_usable_size(void* ptr) {
+    if (!ptr) return 0;
+    
+    struct alloc_header* header = get_header(ptr);
+    if (!header) {
+        return 0;
     }
     
-    uintptr_t addr = (uintptr_t)raw_ptr;
-    uintptr_t aligned_addr = align_up(addr, alignment);
-    
-    return (void*)aligned_addr;
+    return header->requested_size;
 }
 
 int allocator_configure(const struct nomalloc_allocator_config* config) {

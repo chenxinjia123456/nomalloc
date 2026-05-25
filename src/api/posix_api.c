@@ -87,7 +87,7 @@ size_t malloc_usable_size(void* ptr) {
         return 0;
     }
     
-    return 0;
+    return allocator_malloc_usable_size(ptr);
 }
 
 void* mallocx(size_t size, int flags) {
