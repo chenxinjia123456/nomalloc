@@ -1,0 +1,85 @@
+# Build directories
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.ninja
+
+# Object files
+*.o
+*.obj
+*.ko
+*.elf
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# IDE/Editor
+.idea/
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+
+# Test output
+tests/unit/*.test
+tests/benchmark/*.bench
+tests/stress/*.stress
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Documentation output
+docs/_build/
+docs/api_reference/
+
+# Package output
+*.tar.gz
+*.tar.bz2
+*.zip
+*.deb
+*.rpm
+
+# Third party
+third_party/jemalloc/build/
+third_party/google_test/build/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

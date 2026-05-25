@@ -1,0 +1,48 @@
+=== Nomalloc Verification ===
+
+Files check:
+total 40
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 15 11:09 .
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 13 15:15 ..
+-rwxrwxrwx 1 chenxinjia chenxinjia 18770 May 15 11:07 lirs.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  3037 May 15 11:06 lirs.h
+-rwxrwxrwx 1 chenxinjia chenxinjia  8461 May 15 11:09 lirs_manager.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  1372 May 15 11:08 lirs_manager.h
+[OK] LIRS files
+total 48
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 15 11:13 .
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 13 15:02 ..
+-rwxrwxrwx 1 chenxinjia chenxinjia 19194 May 15 11:13 gc.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  3856 May 15 11:11 gc.h
+-rwxrwxrwx 1 chenxinjia chenxinjia 13233 May 15 11:11 gc_region.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  4015 May 15 11:10 gc_region.h
+-rwxrwxrwx 1 chenxinjia chenxinjia  3874 May 15 11:09 gc_types.h
+[OK] GC files
+total 40
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 15 11:16 .
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 13 15:02 ..
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 13 15:10 arch
+-rwxrwxrwx 1 chenxinjia chenxinjia 15791 May 15 11:16 hugepages.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  3941 May 15 11:15 hugepages.h
+-rwxrwxrwx 1 chenxinjia chenxinjia 12562 May 15 15:09 numa.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  3505 May 15 15:08 numa.h
+[OK] OS files
+total 48
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 15 11:21 .
+drwxrwxrwx 1 chenxinjia chenxinjia  4096 May 13 15:02 ..
+-rwxrwxrwx 1 chenxinjia chenxinjia 14963 May 15 11:19 leak_detector.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  3183 May 15 11:17 leak_detector.h
+-rwxrwxrwx 1 chenxinjia chenxinjia 18791 May 15 11:21 stats_collector.c
+-rwxrwxrwx 1 chenxinjia chenxinjia  6625 May 15 11:19 stats_collector.h
+[OK] Debug files
+
+Tools check:
+[MISSING] gcc
+[MISSING] cmake
+
+Build:
+/mnt/e/001_code/005_memcode/nomalloc/verify.sh: line 21: cmake: command not found
+/mnt/e/001_code/005_memcode/nomalloc/verify.sh: line 22: cmake: command not found
+
+Artifacts:
+No artifacts
