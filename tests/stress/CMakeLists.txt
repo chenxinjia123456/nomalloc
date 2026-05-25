@@ -44,3 +44,12 @@ target_include_directories(stress_consistency PRIVATE
 set_target_properties(stress_consistency PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests/stress
 )
+
+add_executable(stress_benchmark benchmark_stress_test.c)
+target_link_libraries(stress_benchmark PRIVATE nomalloc pthread)
+target_include_directories(stress_benchmark PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+set_target_properties(stress_benchmark PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests/stress
+)
